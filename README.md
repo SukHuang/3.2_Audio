@@ -1,7 +1,7 @@
 ---
 title: Signal Watch
-emoji: sound
-colorFrom: teal
+emoji: 🎵
+colorFrom: blue
 colorTo: yellow
 sdk: gradio
 app_file: app.py
