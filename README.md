@@ -3,15 +3,15 @@ title: Signal Watch
 emoji: 🎵
 colorFrom: blue
 colorTo: yellow
-sdk: gradio
-app_file: app.py
+sdk: static
+app_file: index.html
 ---
 
 # Signal Watch
 
-Signal Watch is a Track B audio application. It accepts a short microphone recording,
-uses Python DSP to find the dominant frequency and relative loudness, plots the frequency
-spectrum, and flags recordings whose signal exceeds the selected sensitivity.
+Signal Watch is a browser-based audio monitor. It accepts a short microphone recording,
+uses the Web Audio API to find the dominant frequency and relative loudness, plots the
+frequency spectrum, and flags recordings whose signal exceeds the selected sensitivity.
 
 Live Space: `https://huggingface.co/spaces/<your-account>/<your-space>`
 
