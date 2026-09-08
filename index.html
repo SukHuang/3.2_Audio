@@ -41,8 +41,8 @@
         <label for="sensitivity">Alert sensitivity</label>
         <input id="sensitivity" type="range" min="0.05" max="1" value="0.35" step="0.05">
         <output id="sensitivityValue">0.35</output>
-        <button id="record" type="button">Start microphone</button>
-        <p id="status" class="status">Allow microphone access, then record a short clip.</p>
+        <button id="record" type="button">Start live monitor</button>
+        <p id="status" class="status">Allow microphone access to monitor your voice continuously.</p>
         <footer>Audio is analyzed locally in your browser and is not uploaded.</footer>
       </section>
       <section>
@@ -65,6 +65,9 @@
     let stream;
     let audioContext;
     let analyser;
+    let animationFrame;
+    let monitoring = false;
+    let peakScore = 0;
 
     sensitivity.addEventListener('input', () => { sensitivityValue.value = sensitivity.value; sensitivityValue.textContent = sensitivity.value; });
     function drawSpectrum(values) {
@@ -73,21 +76,57 @@
       values.forEach((value, index) => { const x = index / (values.length - 1) * canvas.width; const y = canvas.height - value / 255 * canvas.height; index ? context.lineTo(x, y) : context.moveTo(x, y); });
       context.stroke();
     }
-    async function analyze() {
-      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      audioContext = new AudioContext(); analyser = audioContext.createAnalyser(); analyser.fftSize = 4096;
-      audioContext.createMediaStreamSource(stream).connect(analyser);
-      const values = new Uint8Array(analyser.frequencyBinCount); analyser.getByteFrequencyData(values); drawSpectrum(values);
-      let peak = 1; for (let i = 2; i < values.length; i += 1) if (values[i] > values[peak]) peak = i;
+    function updateMetrics(values, waveform) {
+      let peak = 1;
+      for (let i = 2; i < values.length; i += 1) if (values[i] > values[peak]) peak = i;
       const frequency = peak * audioContext.sampleRate / analyser.fftSize;
-      const waveform = new Float32Array(analyser.fftSize); analyser.getFloatTimeDomainData(waveform);
       const rms = Math.sqrt(waveform.reduce((sum, value) => sum + value * value, 0) / waveform.length);
-      const decibels = 20 * Math.log10(Math.max(rms, 1e-6)); const score = Math.min(100, Math.max(0, 100 * rms / Number(sensitivity.value)));
-      document.querySelector('#frequency').textContent = `${frequency.toFixed(1)} Hz`; document.querySelector('#level').textContent = `${decibels.toFixed(1)} dBFS`; document.querySelector('#score').textContent = `${score.toFixed(0)} / 100`;
-      status.textContent = score >= 100 ? 'SPIKE ALERT: unusually loud signal' : 'Signal within the selected range'; status.className = score >= 100 ? 'status alert' : 'status';
-      stream.getTracks().forEach(track => track.stop()); await audioContext.close(); recordButton.disabled = false; recordButton.textContent = 'Record again';
+      const decibels = 20 * Math.log10(Math.max(rms, 1e-6));
+      const score = Math.min(100, Math.max(0, 100 * rms / Number(sensitivity.value)));
+      peakScore = Math.max(peakScore, score);
+      document.querySelector('#frequency').textContent = `${frequency.toFixed(1)} Hz`;
+      document.querySelector('#level').textContent = `${decibels.toFixed(1)} dBFS`;
+      document.querySelector('#score').textContent = `${score.toFixed(0)} / 100 (peak ${peakScore.toFixed(0)})`;
+      const alert = score >= 100;
+      status.textContent = alert ? 'SPIKE ALERT: loud voice or sound detected' : 'Monitoring live microphone input';
+      status.className = alert ? 'status alert' : 'status';
     }
-    recordButton.addEventListener('click', async () => { recordButton.disabled = true; recordButton.textContent = 'Listening...'; status.textContent = 'Measuring a short microphone sample...'; try { await analyze(); } catch (error) { status.textContent = `Microphone unavailable: ${error.message}`; recordButton.disabled = false; recordButton.textContent = 'Try again'; } });
+
+    function monitorFrame() {
+      if (!monitoring) return;
+      const values = new Uint8Array(analyser.frequencyBinCount);
+      const waveform = new Float32Array(analyser.fftSize);
+      analyser.getByteFrequencyData(values);
+      analyser.getFloatTimeDomainData(waveform);
+      drawSpectrum(values);
+      updateMetrics(values, waveform);
+      animationFrame = requestAnimationFrame(monitorFrame);
+    }
+
+    async function startMonitoring() {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      analyser = audioContext.createAnalyser(); analyser.fftSize = 4096; analyser.smoothingTimeConstant = 0.72;
+      audioContext.createMediaStreamSource(stream).connect(analyser);
+      monitoring = true; peakScore = 0; recordButton.textContent = 'Stop monitoring';
+      status.textContent = 'Monitoring live microphone input'; monitorFrame();
+    }
+
+    async function stopMonitoring() {
+      monitoring = false; cancelAnimationFrame(animationFrame);
+      if (stream) stream.getTracks().forEach(track => track.stop());
+      if (audioContext) await audioContext.close();
+      recordButton.textContent = 'Start live monitor'; status.textContent = 'Monitoring stopped. Start again to continue listening.';
+    }
+
+    recordButton.addEventListener('click', async () => {
+      recordButton.disabled = true;
+      try {
+        if (monitoring) await stopMonitoring(); else await startMonitoring();
+      } catch (error) {
+        monitoring = false; status.textContent = `Microphone unavailable: ${error.message}`; recordButton.textContent = 'Try again';
+      } finally { recordButton.disabled = false; }
+    });
   </script>
 </body>
 </html>
